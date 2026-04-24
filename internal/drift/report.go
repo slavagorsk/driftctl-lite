@@ -3,27 +3,63 @@ package drift
 import (
 	"fmt"
 	"io"
+	"os"
 	"text/tabwriter"
 )
 
-// PrintReport writes a formatted drift report to w.
-func PrintReport(w io.Writer, deltas []Delta) {
-	if len(deltas) == 0 {
-		fmt.Fprintln(w, "✓ No drift detected.")
-		return
-	}
+// DriftStatus represents the drift status of a resource.
+type DriftStatus string
 
-	fmt.Fprintf(w, "⚠ Drift detected: %d difference(s)\n\n", len(deltas))
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "RESOURCE\tATTRIBUTE\tSTATE VALUE\tLIVE VALUE")
-	fmt.Fprintln(tw, "--------\t---------\t-----------\t----------")
-	for _, d := range deltas {
-		fmt.Fprintf(tw, "%s.%s\t%s\t%s\t%s\n",
-			d.ResourceType, d.ResourceName,
-			d.Attribute,
-			d.StateValue,
-			d.LiveValue,
+const (
+	StatusOK      DriftStatus = "OK"
+	StatusMissing DriftStatus = "MISSING"
+	StatusChanged DriftStatus = "CHANGED"
+)
+
+// ResourceDrift holds drift information for a single resource.
+type ResourceDrift struct {
+	ResourceType string
+	ResourceID   string
+	Status       DriftStatus
+	Details      string
+}
+
+// Report aggregates drift results.
+type Report struct {
+	Items []ResourceDrift
+}
+
+// HasDrift returns true if any resource has drifted.
+func (r *Report) HasDrift() bool {
+	for _, item := range r.Items {
+		if item.Status != StatusOK {
+			return true
+		}
+	}
+	return false
+}
+
+// PrintReport writes a formatted drift report to stdout.
+func PrintReport(report *Report) {
+	printReportTo(report, os.Stdout)
+}
+
+func printReportTo(report *Report, w io.Writer) {
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(tw, "TYPE\tID\tSTATUS\tDETAILS")
+	fmt.Fprintln(tw, "----\t--\t------\t-------")
+	for _, item := range report.Items {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+			item.ResourceType,
+			item.ResourceID,
+			item.Status,
+			item.Details,
 		)
 	}
-	_ = tw.Flush()
+	tw.Flush()
+	if report.HasDrift() {
+		fmt.Fprintln(w, "\n⚠  Drift detected.")
+	} else {
+		fmt.Fprintln(w, "\n✓  No drift detected.")
+	}
 }
