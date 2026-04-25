@@ -1,65 +1,41 @@
 package drift
 
-import (
-	"fmt"
-	"io"
-	"os"
-	"text/tabwriter"
-)
-
-// DriftStatus represents the drift status of a resource.
-type DriftStatus string
-
-const (
-	StatusOK      DriftStatus = "OK"
-	StatusMissing DriftStatus = "MISSING"
-	StatusChanged DriftStatus = "CHANGED"
-)
-
-// ResourceDrift holds drift information for a single resource.
-type ResourceDrift struct {
-	ResourceType string
-	ResourceID   string
-	Status       DriftStatus
-	Details      string
-}
-
-// Report aggregates drift results.
+// Report holds the full result of a drift detection run.
 type Report struct {
-	Items []ResourceDrift
+	Drifts []Drift `json:"drifts"`
 }
 
-// HasDrift returns true if any resource has drifted.
-func (r *Report) HasDrift() bool {
-	for _, item := range r.Items {
-		if item.Status != StatusOK {
-			return true
-		}
-	}
-	return false
+// Drift describes detected differences for a single cloud resource.
+type Drift struct {
+	ResourceType string       `json:"resource_type"`
+	ResourceID   string       `json:"resource_id"`
+	Differences  []Difference `json:"differences"`
 }
 
-// PrintReport writes a formatted drift report to stdout.
-func PrintReport(report *Report) {
-	printReportTo(report, os.Stdout)
+// Difference captures a single attribute mismatch between state and reality.
+type Difference struct {
+	Attribute string `json:"attribute"`
+	Expected  string `json:"expected"`
+	Actual    string `json:"actual"`
 }
 
-func printReportTo(report *Report, w io.Writer) {
-	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "TYPE\tID\tSTATUS\tDETAILS")
-	fmt.Fprintln(tw, "----\t--\t------\t-------")
-	for _, item := range report.Items {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			item.ResourceType,
-			item.ResourceID,
-			item.Status,
-			item.Details,
-		)
+// HasDrift returns true when the report contains at least one drift.
+func (r Report) HasDrift() bool {
+	return len(r.Drifts) > 0
+}
+
+// Summary returns a human-readable one-line summary of the report.
+func (r Report) Summary() string {
+	if !r.HasDrift() {
+		return "No drift detected."
 	}
-	tw.Flush()
-	if report.HasDrift() {
-		fmt.Fprintln(w, "\n⚠  Drift detected.")
-	} else {
-		fmt.Fprintln(w, "\n✓  No drift detected.")
+	total := 0
+	for _, d := range r.Drifts {
+		total += len(d.Differences)
 	}
+	return formatSummary(len(r.Drifts), total)
+}
+
+func formatSummary(resources, diffs int) string {
+	return fmt.Sprintf("%d resource(s) drifted with %d attribute difference(s).", resources, diffs)
 }
