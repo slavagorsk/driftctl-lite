@@ -50,6 +50,8 @@ Drift detected: 2 resource(s) out of sync
 | `--provider` | Cloud provider (`aws`, `gcp`, `azure`) |
 | `--region` | Cloud region (default: `us-east-1`) |
 | `--output` | Output format: `text`, `json` (default: `text`) |
+| `--filter` | Comma-separated list of resource types to scan (e.g. `aws_s3_bucket,aws_iam_role`) |
+| `--exit-code` | Exit with code 1 if drift is detected (useful for CI pipelines) |
 
 ---
 
