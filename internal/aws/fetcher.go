@@ -4,38 +4,44 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// ResourceFetcher fetches live AWS resource attributes.
+// ResourceFetcher dispatches fetch calls by resource type.
 type ResourceFetcher struct {
-	s3Client *s3.Client
+	s3Client  S3Client
+	rdsClient RDSClient
 }
 
-// NewResourceFetcher creates a ResourceFetcher using the default AWS config.
-func NewResourceFetcher(ctx context.Context) (*ResourceFetcher, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("loading aws config: %w", err)
+// NewResourceFetcher creates a ResourceFetcher using the given AWS region.
+func NewResourceFetcher(region string) (*ResourceFetcher, error) {
+	if region == "" {
+		return nil, fmt.Errorf("fetcher: region must not be empty")
 	}
+
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetcher: load aws config: %w", err)
+	}
+
 	return &ResourceFetcher{
-		s3Client: s3.NewFromConfig(cfg),
+		s3Client:  s3.NewFromConfig(cfg),
+		rdsClient: rds.NewFromConfig(cfg),
 	}, nil
 }
 
-// FetchS3Bucket returns selected attributes for the given S3 bucket name.
-func (f *ResourceFetcher) FetchS3Bucket(ctx context.Context, name string) (map[string]string, error) {
-	out, err := f.s3Client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
-		Bucket: aws.String(name),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("fetching bucket %q: %w", name, err)
+// Fetch retrieves live attributes for a resource identified by type and ID.
+func (f *ResourceFetcher) Fetch(ctx context.Context, resourceType, resourceID string) (map[string]string, error) {
+	switch resourceType {
+	case "aws_s3_bucket":
+		return FetchS3Bucket(ctx, f.s3Client, resourceID)
+	case "aws_db_instance":
+		return FetchRDSInstance(ctx, f.rdsClient, resourceID)
+	default:
+		return nil, fmt.Errorf("fetcher: unsupported resource type %q", resourceType)
 	}
-	attrs := map[string]string{
-		"bucket": name,
-		"region": string(out.LocationConstraint),
-	}
-	return attrs, nil
 }

@@ -8,71 +8,53 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// S3Client defines the subset of the S3 API used for drift detection.
+// S3Client defines the interface for S3 operations used in fetching.
 type S3Client interface {
-	GetBucketLocation(ctx context.Context, params *s3.GetBucketLocationInput, optFns ...func(*s3.Options)) (*s3.GetBucketLocationOutput, error)
+	HeadBucket(ctx context.Context, params *s3.HeadBucketInput, optFns ...func(*s3.Options)) (*s3.HeadBucketOutput, error)
 	GetBucketTagging(ctx context.Context, params *s3.GetBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error)
-	GetBucketVersioning(ctx context.Context, params *s3.GetBucketVersioningInput, optFns ...func(*s3.Options)) (*s3.GetBucketVersioningOutput, error)
 }
 
-// S3BucketAttributes holds the live attributes fetched from AWS for an S3 bucket.
-type S3BucketAttributes struct {
-	Bucket     string
-	Region     string
-	Versioning string
-	Tags       map[string]string
+// mockS3Client is used in tests.
+type mockS3Client struct {
+	headOutput *s3.HeadBucketOutput
+	headErr    error
+	tagsOutput *s3.GetBucketTaggingOutput
+	tagsErr    error
 }
 
-// FetchS3Bucket retrieves the current state of an S3 bucket from AWS.
-// It returns a map of attribute name to value suitable for drift comparison.
-func FetchS3Bucket(ctx context.Context, client S3Client, bucketName string) (map[string]interface{}, error) {
+func (m *mockS3Client) HeadBucket(_ context.Context, _ *s3.HeadBucketInput, _ ...func(*s3.Options)) (*s3.HeadBucketOutput, error) {
+	return m.headOutput, m.headErr
+}
+
+func (m *mockS3Client) GetBucketTagging(_ context.Context, _ *s3.GetBucketTaggingInput, _ ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error) {
+	return m.tagsOutput, m.tagsErr
+}
+
+// FetchS3Bucket retrieves live attributes for an S3 bucket.
+func FetchS3Bucket(ctx context.Context, client S3Client, bucketName string) (map[string]string, error) {
 	if bucketName == "" {
-		return nil, fmt.Errorf("bucket name must not be empty")
+		return nil, fmt.Errorf("s3: bucketName must not be empty")
 	}
 
-	attrs := make(map[string]interface{})
-	attrs["bucket"] = bucketName
-
-	// Fetch bucket region / location constraint.
-	locOut, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+	_, err := client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("get bucket location for %q: %w", bucketName, err)
+		return nil, fmt.Errorf("s3: head bucket: %w", err)
 	}
-	region := string(locOut.LocationConstraint)
-	if region == "" {
-		// Buckets in us-east-1 return an empty location constraint.
-		region = "us-east-1"
-	}
-	attrs["region"] = region
 
-	// Fetch versioning status.
-	verOut, err := client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+	attrs := map[string]string{
+		"bucket": bucketName,
+	}
+
+	tagsOut, err := client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 		Bucket: aws.String(bucketName),
 	})
-	if err != nil {
-		return nil, fmt.Errorf("get bucket versioning for %q: %w", bucketName, err)
-	}
-	versioning := string(verOut.Status)
-	if versioning == "" {
-		versioning = "Disabled"
-	}
-	attrs["versioning"] = versioning
-
-	// Fetch tags (best-effort: missing tags are treated as empty).
-	tagOut, err := client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
-		Bucket: aws.String(bucketName),
-	})
-	tags := map[string]string{}
-	if err == nil && tagOut != nil {
-		for _, t := range tagOut.TagSet {
-			if t.Key != nil && t.Value != nil {
-				tags[*t.Key] = *t.Value
-			}
+	if err == nil && tagsOut != nil {
+		for _, tag := range tagsOut.TagSet {
+			attrs["tag:"+aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 		}
 	}
-	attrs["tags"] = tags
 
 	return attrs, nil
 }
