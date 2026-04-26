@@ -28,6 +28,19 @@ func TestReport_HasDrift_WithDrift(t *testing.T) {
 	}
 }
 
+func TestReport_HasDrift_Mixed(t *testing.T) {
+	// A report with both OK and drifted resources should still report drift.
+	report := &Report{
+		Items: []ResourceDrift{
+			{ResourceType: "aws_s3_bucket", ResourceID: "bucket-ok", Status: StatusOK, Details: ""},
+			{ResourceType: "aws_s3_bucket", ResourceID: "bucket-bad", Status: StatusChanged, Details: "tag mismatch"},
+		},
+	}
+	if !report.HasDrift() {
+		t.Error("expected drift for mixed report, but HasDrift returned false")
+	}
+}
+
 func TestPrintReport_NoDrift(t *testing.T) {
 	report := &Report{
 		Items: []ResourceDrift{
