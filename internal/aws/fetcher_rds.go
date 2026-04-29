@@ -14,15 +14,22 @@ type rdsClient interface {
 	DescribeDBInstances(ctx context.Context, params *rds.DescribeDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error)
 }
 
+// isRDSType reports whether the given Terraform resource type is managed
+// by the RDS fetcher.
 func isRDSType(resourceType string) bool {
 	return resourceType == "aws_db_instance"
 }
 
+// rdsClientFromConfig creates a new RDS client from an existing AWS config.
 func rdsClientFromConfig(cfg aws.Config) (*rds.Client, error) {
 	return rds.NewFromConfig(cfg), nil
 }
 
+// newRDSClient creates a new RDS client configured for the given AWS region.
 func newRDSClient(region string) (*rds.Client, error) {
+	if region == "" {
+		return nil, fmt.Errorf("region must not be empty")
+	}
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion(region),
 	)
@@ -32,6 +39,8 @@ func newRDSClient(region string) (*rds.Client, error) {
 	return rds.NewFromConfig(cfg), nil
 }
 
+// fetchRDSResource retrieves the attributes of an RDS resource identified by
+// resourceType and id using the provided client.
 func fetchRDSResource(client rdsClient, resourceType, id string) (map[string]string, error) {
 	if id == "" {
 		return nil, fmt.Errorf("empty resource ID for type %s", resourceType)
