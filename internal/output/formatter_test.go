@@ -88,3 +88,16 @@ func TestNewFormatter_DefaultsToStdout(t *testing.T) {
 		t.Error("expected non-nil writer")
 	}
 }
+
+// TestWriteText_WithDrift_ContainsResourceID verifies that the text formatter
+// includes the resource ID in its output when drift is present.
+func TestWriteText_WithDrift_ContainsResourceID(t *testing.T) {
+	var buf bytes.Buffer
+	f := NewFormatter(FormatText, &buf)
+	if err := f.Write(buildReport(true)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "my-bucket") {
+		t.Errorf("expected resource ID in output, got: %s", buf.String())
+	}
+}
