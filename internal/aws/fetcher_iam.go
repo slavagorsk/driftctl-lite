@@ -3,33 +3,51 @@ package aws
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 )
 
-// iamClientFromConfig builds a real IAM client using the fetcher's AWS config.
-func iamClientFromConfig(f *ResourceFetcher) IAMClient {
-	return iam.NewFromConfig(f.cfg)
+// iamClientFromConfig creates an IAM client from the provided AWS config.
+func iamClientFromConfig(cfg aws.Config) *iam.Client {
+	return iam.NewFromConfig(cfg)
 }
 
-// fetchIAMResource dispatches to the appropriate IAM fetch function based on
-// the resource type suffix ("aws_iam_user" or "aws_iam_role").
-func fetchIAMResource(ctx context.Context, f *ResourceFetcher, resourceType, id string) (map[string]string, error) {
-	client := iamClientFromConfig(f)
+// isIAMType returns true if the given Terraform resource type is an IAM resource.
+func isIAMType(resourceType string) bool {
+	switch resourceType {
+	case "aws_iam_user", "aws_iam_role":
+		return true
+	}
+	return false
+}
 
-	switch {
-	case strings.HasSuffix(resourceType, "iam_user"):
-		return FetchIAMUser(ctx, client, id)
-	case strings.HasSuffix(resourceType, "iam_role"):
-		return FetchIAMRole(ctx, client, id)
+// fetchIAMResource fetches an IAM resource by type and ID, returning its attributes.
+func fetchIAMResource(cfg aws.Config, resourceType, id string) (map[string]interface{}, error) {
+	if id == "" {
+		return nil, fmt.Errorf("resource ID is empty for type %s", resourceType)
+	}
+
+	client := iamClientFromConfig(cfg)
+
+	switch resourceType {
+	case "aws_iam_user":
+		return FetchIAMUser(context.Background(), client, id)
+	case "aws_iam_role":
+		return FetchIAMRole(context.Background(), client, id)
 	default:
-		return nil, fmt.Errorf("unsupported IAM resource type: %q", resourceType)
+		return nil, fmt.Errorf("unsupported IAM resource type: %s", resourceType)
 	}
 }
 
-// isIAMType returns true when the resource type belongs to the IAM service.
-func isIAMType(resourceType string) bool {
-	return strings.Contains(resourceType, "iam_user") ||
-		strings.Contains(resourceType, "iam_role")
+// newIAMConfigFromRegion creates an AWS config for the given region.
+func newIAMConfigFromRegion(region string) (aws.Config, error) {
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+	)
+	if err != nil {
+		return aws.Config{}, fmt.Errorf("failed to load AWS config for IAM: %w", err)
+	}
+	return cfg, nil
 }
