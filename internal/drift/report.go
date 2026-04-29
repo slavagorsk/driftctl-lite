@@ -1,5 +1,7 @@
 package drift
 
+import "fmt"
+
 // Report holds the full result of a drift detection run.
 type Report struct {
 	Drifts []Drift `json:"drifts"`
@@ -34,6 +36,19 @@ func (r Report) Summary() string {
 		total += len(d.Differences)
 	}
 	return formatSummary(len(r.Drifts), total)
+}
+
+// DriftedResources returns only the Drift entries that contain at least one
+// Difference, which is useful when a Drift may have been recorded with an
+// empty difference list.
+func (r Report) DriftedResources() []Drift {
+	result := make([]Drift, 0, len(r.Drifts))
+	for _, d := range r.Drifts {
+		if len(d.Differences) > 0 {
+			result = append(result, d)
+		}
+	}
+	return result
 }
 
 func formatSummary(resources, diffs int) string {
